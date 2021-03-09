@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>LED Color Setup</title>
+		<meta charset='UTF-8'>
+		<meta name='description' content='LED Color Setup'>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<style>
+			body {
+			margin: 0;
+			padding: 0;
+			}
+		</style>
+	</head>
+	<body onload='getData()'>
+		<table id='ColorTable'>
+			<tr id='header'>
+				<th colspan='2'>Color</th>
+			</tr>
+		</table>
+		<button type='button' onclick='addRow(null, null, numLeds)'>Add Row</button>
+		<button type='button' onclick='send()'>Apply</button>
+		<script>
+			var numLeds = 0
+			var initialData = ''
+		
+			function addRow(color, booleans, numLeds) {
+				let parent = document.getElementById('ColorTable')				
+				let row = document.createElement('tr')
+				row.id = 'ColorRow' + parent.children.length
+				row.innerHTML = `
+				<td><button type='button' onclick='removeRow(parent.children.length)'>X</button></td>
+				<td><input type='color' value='#${color ? color : 'ff0000'}'></input></td>
+				`
+				parent.appendChild(row)
+				for (var i = 0; i < numLeds; i++) {
+					let box = document.createElement('td')
+					box.innerHTML = `
+					<input type='checkbox'${booleans && booleans[i] ? ' checked' : ''}>
+					`
+					row.appendChild(box)
+				}
+			}
+			
+			function removeRow(rowNum) {
+				let parent = document.getElementById('ColorTable')
+				parent.removeChild(parent.children[rowNum])
+				for (var i = 1; i < parent.children.length; i++) {
+					parent.children[i].children[0].onclick = () => { removeRow(i) }
+				}
+			}
+			
+			function send() {
+				let parent = document.getElementById('ColorTable')
+				var toSend = ''
+				for (var i = 1; i < parent.children.length; i++) {
+					toSend += parent.children[i].children[1].firstChild.value.substring(1)
+					let byte = 0
+					let adding = 1
+					for (var j = 2; j < parent.children[i].children.length; j++) {
+						if (parent.children[i].children[j].children[0].checked) {
+							byte += adding
+						}
+						adding *= 2
+						if ((j - 2) % 8 == 7) {
+							if (byte < 16) {
+								toSend += '0'
+							}
+							toSend += byte.toString(16)
+							byte = 0
+							adding = 1
+						}
+					}
+					if (parent.children[i].children.length - 2 % 8 != 7) {
+						if (byte < 16) {
+							toSend += '0'
+						}
+						toSend += byte.toString(16)
+					}
+				}
+				let req = new XMLHttpRequest()
+				req.addEventListener('load', () => {
+					console.log(this.responseText)
+				})
+				req.open('GET', `/submit?rows=${parent.children.length - 1}&data=${toSend}`)
+				req.send()
+			}
+			
+			function getData() {
+				let req = new XMLHttpRequest()
+				req.addEventListener('load', onLoad)
+				req.open('GET', '/data')
+				req.send()
+			}
+			
+			function onLoad() {
+				console.log(this)
+				console.log(this.response)
+				
+				numLeds = parseInt(this.response.split(":")[0])
+				initialData = this.response.split(":")[1]
+				
+				while (initialData.length > 0) {
+					var colorString = initialData.substr(0, 6)
+					initialData = initialData.substr(6)
+					var booleans = []
+					for (var i = 0; i < Math.ceil(numLeds / 8); i++) {
+						var thisByte = parseInt(initialData.substr(0, 2), 16)
+						initialData = initialData.substr(2)
+						for (var j = 0; j < 8; j++) {
+							booleans.push(thisByte % 2 > 0)
+							thisByte = thisByte >> 1
+						}
+					}
+					addRow(colorString, booleans, numLeds)
+				}
+				
+				let row = document.getElementById("header")
+				for (var i = 0; i < numLeds; i++) {
+					let lbl = document.createElement("th")
+					lbl.innerHTML = i
+					row.appendChild(lbl)
+				}
+			}
+		</script>
+	</body>
+</html>
