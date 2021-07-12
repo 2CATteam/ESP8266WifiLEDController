@@ -20,6 +20,13 @@
 		</table>
 		<button type='button' onclick='addRow(null, null, numLeds)'>Add Row</button>
 		<button type='button' onclick='send()'>Apply</button>
+		
+		<p>Automatic turn off</p>
+		<label for="start">Start:</label>
+		<input type="time" name="start" id="start"></input>
+		<label for="end">End:</label>
+		<input type="time" name="end" id="end"></input>
+		<button type='button' onclick='sendTimes()'>Apply</button>
 		<script>
 			var numLeds = 0
 			var initialData = ''
@@ -29,7 +36,7 @@
 				let row = document.createElement('tr')
 				row.id = 'ColorRow' + parent.children.length
 				row.innerHTML = `
-				<td><button type='button' onclick='removeRow(parent.children.length)'>X</button></td>
+				<td><button type='button' onclick='removeRow(${parent.children.length})'>X</button></td>
 				<td><input type='color' value='#${color ? color : 'ff0000'}'></input></td>
 				`
 				parent.appendChild(row)
@@ -44,7 +51,7 @@
 			
 			function removeRow(rowNum) {
 				let parent = document.getElementById('ColorTable')
-				parent.removeChild(parent.children[rowNum])
+				parent.removeChild(parent.childNodes[rowNum + 1])
 				for (var i = 1; i < parent.children.length; i++) {
 					parent.children[i].children[0].onclick = () => { removeRow(i) }
 				}
@@ -86,11 +93,59 @@
 				req.send()
 			}
 			
+			function sendTimes() {
+				let start = document.getElementById('start').value
+				if (start == "") {
+					document.getElementById('start').style = "border-color: red"
+					return
+				} else {
+					document.getElementById('start').style = ""
+				}
+				let startHours = parseInt(start.match(/^\d+/)[0])
+				let startMinutes = parseInt(start.match(/\d+$/)[0])
+				let startMillis = (startHours * 60 + startMinutes) * 60 * 1000
+				console.log(startMillis)
+				
+				let end = document.getElementById('end').value
+				if (end == "") {
+					document.getElementById('end').style = "border-color: red"
+					return
+				} else {
+					document.getElementById('end').style = ""
+				}
+				let endHours = parseInt(end.match(/^\d+/)[0])
+				let endMinutes = parseInt(end.match(/\d+$/)[0])
+				let endMillis = (endHours * 60 + endMinutes) * 60 * 1000
+				console.log(endMillis)
+				
+				let transitionPoint = (((endMillis - startMillis) % (86400 * 1000)) + (86400 * 1000)) % (86400 * 1000)
+				
+				let now = new Date()
+				
+				let nowMillis = ((now.getHours() * 60 + now.getMinutes()) * 60 + now.getSeconds()) * 1000 + now.getMilliseconds()
+				console.log(nowMillis)
+				let nowRelative = (((nowMillis - startMillis) % (86400 * 1000)) + (86400 * 1000)) % (86400 * 1000)
+				console.log(nowRelative)
+				
+				let req = new XMLHttpRequest()
+				req.addEventListener('load', () => {
+					console.log(this.responseText)
+				})
+				console.log(transitionPoint)
+				console.log(nowRelative)
+				req.open('GET', `/setTimes?transition=${transitionPoint}&now=${nowRelative}`)
+				req.send()
+			}
+			
 			function getData() {
 				let req = new XMLHttpRequest()
 				req.addEventListener('load', onLoad)
 				req.open('GET', '/data')
 				req.send()
+				let req2 = new XMLHttpRequest()
+				req2.addEventListener('load', onTimesLoad)
+				req2.open('GET', '/getTimes')
+				req2.send()
 			}
 			
 			function onLoad() {
@@ -121,6 +176,19 @@
 					lbl.innerHTML = i
 					row.appendChild(lbl)
 				}
+			}
+			
+			function onTimesLoad() {
+				console.log(this.response)
+				let nowRelative = parseInt(this.response.split(":")[0])
+				let transition = parseInt(this.response.split(":")[1])
+				let now = new Date()
+				let nowMillis = ((now.getHours() * 60 + now.getMinutes()) * 60 + now.getSeconds()) * 1000 + now.getMilliseconds()
+				let derivedStart = ((nowMillis - nowRelative) + (86400 * 1000)) % (86400 * 1000)
+				let derivedMinutes = Math.round(derivedStart / (1000 * 60))
+				document.getElementById("start").value = `${Math.floor(derivedMinutes / 60).toString().padStart(2, '0')}:${(derivedMinutes % 60).toString().padStart(2, "0")}`
+				derivedMinutes = Math.round((derivedMinutes + (transition / (60 * 1000))) % (24 * 60))
+				document.getElementById("end").value = `${Math.floor(derivedMinutes / 60).toString().padStart(2, '0')}:${(derivedMinutes % 60).toString().padStart(2, "0")}`
 			}
 		</script>
 	</body>

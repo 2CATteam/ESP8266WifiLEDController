@@ -7,15 +7,23 @@
 
 //These two are not related
 #define ledPin 15
-#define numLEDs 15
+#define numLEDs 13
 #define resetPin 5
 #define groundPin 16
+
+#define fudge 1
 
 ESP8266WebServer server(80);
 CRGB colors[numLEDs];
 
 byte* settings = NULL;
 int settingsLength = 0;
+
+int timeStuff = 0;
+unsigned long lastMillis = 0;
+int now = 0;
+int transition = -1;
+bool enabled = true;
 
 void setup() {
   //Begin setup
@@ -72,17 +80,22 @@ void setup() {
   IPAddress apIP(192, 168, 0, 1);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   //Private password plz do not steal
-  WiFi.softAP("LEDControls", "DasaniKeyton");
+  WiFi.softAP("LEDControlsChase", "DasaniKeyton");
 
   //Route paths
   server.on("/", root);
   server.on("/data", data);
   server.on("/submit", submit);
+  server.on("/getTimes", getTimes);
+  server.on("/setTimes", setTimes);
 
   //Start server
   Serial.println("Turning on server");
   server.begin();
   Serial.println("Done with setup");
+
+  //Enables the time thing
+  lastMillis = millis();
 }
 
 //Main loops
@@ -93,6 +106,34 @@ void loop() {
   if (digitalRead(resetPin) == LOW) {
     setAllWhite();
     refreshLEDs();
+  }
+
+  //Do the part where we keep track of time
+  if (millis() - lastMillis > 100) {
+    bool shouldRefresh = false;
+    now += millis() - lastMillis;
+    //timeStuff += millis() - lastMillis;
+    lastMillis = millis();
+    if (now > 86400 * 1000 * fudge && enabled) {
+      now = now % (int)(86400 * 1000 * fudge);
+    }
+    if (now > transition && !enabled) {
+      enabled = true;
+      shouldRefresh = true;
+    } else if (now < transition && enabled) {
+      enabled = false;
+      shouldRefresh = true;
+    }
+    if (shouldRefresh) {
+      refreshLEDs();
+    }
+    /*if (timeStuff > 10000) {
+      //Serial.println("Ten seconds have passed");
+      Serial.print(millis());
+      Serial.print(" ");
+      Serial.println(timeStuff);
+      timeStuff = timeStuff % 10000;
+    }*/
   }
 }
 
@@ -164,7 +205,7 @@ void refreshLEDs() {
 
     //Set LED values based on settings
     for (int j = 0; j < numLEDs; j++) {
-      if (ledBools[j]) {
+      if (ledBools[j] && enabled) {
         colors[j] = CRGB(settings[i * (3 + numBytes) + 0],
                          settings[i * (3 + numBytes) + 1],
                          settings[i * (3 + numBytes) + 2]);
@@ -269,4 +310,20 @@ void submit() {
 
   //Show changes
   refreshLEDs();
+}
+
+void getTimes() {
+  char toSend[256];
+  sprintf(toSend, "%d:%d", (int) (now / fudge), (int) (transition / fudge));
+  server.send(200, "text/plain", toSend);
+}
+
+void setTimes() {
+  String transitionText = server.arg("transition");
+  String nowText = server.arg("now");
+  transition = (int) (transitionText.toInt() * fudge);
+  now = (int) (nowText.toInt() * fudge);
+  Serial.println(now);
+  Serial.println(transition);
+  server.send(200, "text/plain", "Success!");
 }
